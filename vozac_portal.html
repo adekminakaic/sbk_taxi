@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SBK Taxi - Portal za Vozače</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS za mapu -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { background-color: #09090b; color: #f4f4f5; }
+        .bg-card { background-color: #18181b; border: 1px solid #d4af37; }
+        .text-gold { color: #d4af37; }
+        .btn-gold { background-color: #d4af37; color: #09090b; font-weight: bold; }
+        .btn-gold:hover { background-color: #c29b2e; }
+    </style>
+</head>
+<body class="font-sans min-h-screen p-6 flex flex-col justify-center">
+
+    <!-- 1. EKRAN ZA OBAVEZNO PREUZIMANJE UGOVORA -->
+    <div id="view-ugovor" class="max-w-md mx-auto p-6 bg-card rounded-xl text-center shadow-xl hidden w-full">
+        <h2 class="text-xl font-bold text-gold mb-3">Obavezan službeni ugovor</h2>
+        <p class="text-sm text-zinc-300 mb-6">Dobrodošli na SBK Taxi platformu. Prije pristupa radnom portalu, dužni ste preuzeti i pročitati vaš ugovor o saradnji.</p>
+        
+        <a id="download-link" href="#" onclick="oznaciPreuzeto()" class="inline-block bg-amber-500 hover:bg-amber-400 text-black font-bold px-6 py-3 rounded-lg transition w-full shadow-lg">
+            📄 Preuzmi PDF Ugovor i Otključaj Portal
+        </a>
+    </div>
+<!-- 2. GLAVNI VOZAČKI PORTAL -->
+    <div id="view-portal" class="max-w-2xl mx-auto space-y-6 w-full">
+
+        <!-- Zaglavlje Portala -->
+        <div class="flex justify-between items-center bg-card p-6 rounded-xl shadow-lg border border-yellow-600/30">
+            <div>
+                <h1 class="text-2xl font-bold text-gold">Vozački Portal</h1>
+                <p id="info-telefon" class="text-xs text-zinc-400 mt-1">Učitavanje profila...</p>
+            </div>
+            <a href="index.html" class="text-zinc-400 hover:text-amber-400 text-sm font-medium">Odjava / Nazad</a>
+        </div>
+
+        <!-- Sekcija za status i lokaciju vozača -->
+        <div class="bg-card p-5 rounded-xl shadow-lg space-y-4">
+            <h3 class="text-md font-bold text-amber-400">Vaš radni status i lokacija</h3>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Status rada:</label>
+                    <select id="status-rada" class="w-full bg-zinc-950 border border-zinc-700 p-2 rounded text-sm text-zinc-200">
+                        <option value="Aktivan">Aktivan</option>
+                        <option value="Offline">Offline</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Status zauzeća:</label>
+                    <select id="status-zauzeca" class="w-full bg-zinc-950 border border-zinc-700 p-2 rounded text-sm text-zinc-200">
+                        <option value="Slobodan">Slobodan</option>
+                        <option value="Zauzet">Zauzet</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs text-zinc-400 mb-1">Trenutna lokacija (Obavezno unijeti prije prihvatanja vožnje):</label>
+                <input type="text" id="trenutna-lokacija" placeholder="Npr. Travnik Centar" class="w-full bg-zinc-950 border border-zinc-700 p-2 rounded text-sm text-zinc-200">
+            </div>
+
+            <button onclick="azurirajStatus()" class="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-2 rounded text-sm transition">Sačuvaj status i lokaciju</button>
+        </div>
+
+        <!-- 1. PRVO IDE SEKCIJA ZA DOSTUPNE VOŽNJE -->
+        <div class="bg-card p-5 rounded-xl shadow-lg space-y-4">
+            <div class="flex justify-between items-center">
+                <h3 class="text-md font-bold text-amber-400">Dostupne naručene vožnje</h3>
+                <button onclick="ucitajDostupneVoznje()" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs px-3 py-1.5 rounded transition">Osvježi listu</button>
+            </div>
+
+            <div id="lista-voznji-box" class="space-y-3">
+                <p class="text-zinc-500 text-center py-4">Učitavanje dostupnih vožnji...</p>
+            </div>
+        </div>
+
+        <!-- 2. PA ONDA MAPA (Ispod vožnji, pojavljuje se samo kada vožnja krene) -->
+        <div id="sekcija-za-mapu" class="bg-card p-5 rounded-xl shadow-lg space-y-3" style="display: none;">
+            <h3 class="text-md font-bold text-amber-400">Pregled lokacije klijenta na mapi</h3>
+            <div id="map" style="height: 300px;" class="rounded-lg border border-zinc-700"></div>
+        </div>
+
+    </div>
+
+    <!-- JavaScript logika za portal, ugovor i mapu -->
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // Uzmi telefon iz URL-a, a ako ga nema, uzmi iz localStorage ili stavi fallback
+        const vozacTelefon = urlParams.get('telefon') || localStorage.getItem("vozac_telefon") || "061123456";
+
+        let mapa = null;
+        let marker = null;
+
+        function inicijalizujMapuKlijenta(klijentLat, klijentLon, vozacLat, vozacLon, nazivPolazista) {
+            const sekcijaMape = document.getElementById('sekcija-za-mapu');
+            if (sekcijaMape) {
+                sekcijaMape.style.display = 'block'; 
+            }
+
+            if (typeof L === 'undefined') {
+                console.error("Leaflet biblioteka nije učitana!");
+                return;
+            }
+
+            // Centar Travnika kao sigurni fallback
+            let latZaPrikaz = 44.2272;
+            let lonZaPrikaz = 17.6672;
+
+            const lokacijaTekst = (nazivPolazista || "").toLowerCase();
+
+            if (lokacijaTekst.includes("kalibunar")) {
+                latZaPrikaz = 44.2345; 
+                lonZaPrikaz = 17.6520;
+            } else if (lokacijaTekst.includes("konzum") || lokacijaTekst.includes("centar")) {
+                latZaPrikaz = 44.2280; 
+                lonZaPrikaz = 17.6650;
+            } else if (lokacijaTekst.includes("bašbunar") || lokacijaTekst.includes("basbunar")) {
+                latZaPrikaz = 44.2250; 
+                lonZaPrikaz = 17.6710;
+            } else if (klijentLat && klijentLon && klijentLat > 44.0 && klijentLat < 44.5) {
+                latZaPrikaz = klijentLat;
+                lonZaPrikaz = klijentLon;
+            }
+
+            setTimeout(() => {
+                try {
+                    if (!mapa) {
+                        mapa = L.map('map').setView([latZaPrikaz, lonZaPrikaz], 16);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            maxZoom: 19,
+                            attribution: '&copy; OpenStreetMap'
+                        }).addTo(mapa);
+
+                        L.marker([latZaPrikaz, lonZaPrikaz]).addTo(mapa)
+                            .bindPopup('<b>Lokacija:</b><br>' + (nazivPolazista || "Travnik"))
+                            .openPopup();
+
+                    } else {
+                        mapa.invalidateSize();
+                        mapa.setView([latZaPrikaz, lonZaPrikaz], 16);
+                        
+                        mapa.eachLayer((layer) => {
+                            if (layer instanceof L.Marker) {
+                                mapa.removeLayer(layer);
+                            }
+                        });
+
+                        L.marker([latZaPrikaz, lonZaPrikaz]).addTo(mapa)
+                            .bindPopup('<b>Lokacija:</b><br>' + (nazivPolazista || "Travnik"))
+                            .openPopup();
+                    }
+                } catch (e) {
+                    console.error("Greška pri inicijalizaciji mape:", e);
+                }
+            }, 150);
+        }
+        if (!vozacTelefon) {
+            alert("Greška: Niste prijavljeni!");
+            window.location.href = "index.html";
+        } else {
+            document.getElementById('info-telefon').innerText = "Broj: " + vozacTelefon;
+            provjeriInicijalniStatusUgovora(vozacTelefon);
+        }
+
+        // 1. Provjera statusa ugovora i ID-a vozača
+        async function provjeriInicijalniStatusUgovora(telefon) {
+            try {
+                const responsePrijava = await fetch(`${API_URL}/api/vozac/prijava`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ 'telefon': telefon })
+                });
+                const dataPrijava = await responsePrijava.json();
+
+                if (!responsePrijava.ok) {
+                    alert(dataPrijava.detail || "Greška pri pristupu nalogu.");
+                    window.location.href = "index.html";
+                    return;
+                }
+
+                const vozacId = dataPrijava.vozac.id;
+
+                const responseUgovor = await fetch(`${API_URL}/api/vozac/provjeri-status-ugovora`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 'telefon': telefon })
+                });
+                const dataUgovor = await responseUgovor.json();
+
+                if (dataUgovor.ugovor_preuzet) {
+                    document.getElementById('view-ugovor').classList.add('hidden');
+                    document.getElementById('view-portal').classList.remove('hidden');
+                    ucitajDostupneVoznje();
+                    setInterval(ucitajDostupneVoznje, 5000);
+                } else {
+                    document.getElementById('view-portal').classList.add('hidden');
+                    document.getElementById('view-ugovor').classList.remove('hidden');
+                    document.getElementById('download-link').href = `${API_URL}/api/vozac/preuzmi-ugovor/${vozacId}`;
+                }
+
+            } catch (error) {
+                console.error("Greška:", error);
+            }
+        }
+
+        function oznaciPreuzeto() {
+            setTimeout(() => {
+                document.getElementById('view-ugovor').classList.add('hidden');
+                document.getElementById('view-portal').classList.remove('hidden');
+                ucitajDostupneVoznje();
+            }, 1500);
+        }
+
+        // Funkcija za učitavanje dostupnih vožnji
+        async function ucitajDostupneVoznje() {
+            try {
+                const response = await fetch(`${API_URL}/api/vozac/dostupne-voznje?telefon=${vozacTelefon}`);
+                const data = await response.json();
+
+                const box = document.getElementById('lista-voznji-box');
+                
+                // Ako je vožnja u toku, nećemo da nam osvježavanje prepisuje karticu
+                if (document.querySelector('.bg-amber-950\\/40')) {
+                    return;
+                }
+
+                box.innerHTML = "";
+
+                if (data.trenutna_lokacija) {
+                    document.getElementById('trenutna-lokacija').value = data.trenutna_lokacija;
+                }
+
+                if (response.ok && data.dostupne_voznje && data.dostupne_voznje.length > 0) {
+                    data.dostupne_voznje.forEach(v => {
+                        box.innerHTML += `
+                            <div id="voznja-${v.id}" class="p-4 bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                <div class="space-y-1">
+                                    <p class="text-sm font-bold text-zinc-100">Putnik: ${v.ime_putnika} (${v.telefon_putnika})</p>
+                                    <p class="text-xs text-zinc-300"><b>Relacija:</b> ${v.lokacija_polazista} ➡️ ${v.lokacija_odredista}</p>
+                                    <p class="text-xs text-amber-400"><b>Cijena:</b> ${v.cijena_voznje} KM</p>
+                                </div>
+                                <button onclick="provjeriIPrihvatiVoznju(${v.id})" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded text-xs transition">Prihvati vožnju</button>
+                            </div>
+                        `;
+                    });
+                } else {
+                    box.innerHTML = `<p class="text-zinc-500 text-center py-4">Trenutno nema aktivnih vožnji na čekanju.</p>`;
+                }
+            } catch (err) {
+                console.error("Greška:", err);
+                document.getElementById('lista-voznji-box').innerHTML = `<p class="text-red-400 text-center py-4">Greška pri učitavanju vožnji.</p>`;
+            }
+        }
+
+        // Pomoćna funkcija koja provjerava lokaciju prije prihvatanja
+        function provjeriIPrihvatiVoznju(idVoznje) {
+            const trenutnaLokacijaInput = document.getElementById('trenutna-lokacija').value.trim();
+            
+            if (!trenutnaLokacijaInput) {
+                alert("Greška: Morate unijeti svoju trenutnu lokaciju prije prihvatanja vožnje!");
+                document.getElementById('trenutna-lokacija').focus();
+                return;
+            }
+
+            prihvatiVoznju(idVoznje);
+        }
+
+// Funkcija za prihvatanje konkretne vožnje
+        async function prihvatiVoznju(idVoznje) {
+            const trenutnaLokacijaInput = document.getElementById('trenutna-lokacija').value.trim();
+
+            if (!navigator.geolocation) {
+                alert("Geolokacija nije podržana u vašem pretraživaču.");
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(async function(position) {
+                const vozacLat = position.coords.latitude;
+                const vozacLon = position.coords.longitude;
+
+                try {
+                    const response = await fetch(`${API_URL}/api/vozac/prihvati-voznju/${idVoznje}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            telefon: vozacTelefon,
+                            lokacija_tekst: trenutnaLokacijaInput,
+                            lat: vozacLat,
+                            lon: vozacLon 
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        alert("Uspješno ste prihvatili vožnju!");
+
+                        // 1. Automatski mijenjamo status zauzeća u padajućem meniju na "Zauzet"
+                        const statusZauzecaSelect = document.getElementById('status-zauzeca');
+                        if (statusZauzecaSelect) {
+                            statusZauzecaSelect.value = "Zauzet";
+                        }
+
+                        // 2. Mijenjamo karticu vožnje u narandžastu "VOŽNJA U TOKU" sa dugmetom za završetak
+                        const voznjaBox = document.getElementById(`voznja-${idVoznje}`);
+                        if (voznjaBox) {
+                            voznjaBox.className = "p-4 bg-amber-950/40 border border-amber-500 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3";
+                            voznjaBox.innerHTML = `
+                                <div class="space-y-1">
+                                    <p class="text-sm font-bold text-amber-400">VOŽNJA U TOKU</p>
+                                    <p class="text-xs text-zinc-300"><b>Putnik:</b> ${data.detalji_voznje?.putnik || data.detalji_voznje?.ime_putnika || "Putnik"} (${data.detalji_voznje?.telefon_putnik || ""})</p>
+                                    <p class="text-xs text-zinc-300"><b>Relacija:</b> ${data.detalji_voznje?.polaziste || data.detalji_voznje?.lokacija_polazista || ""} ➡️ ${data.detalji_voznje?.odrediste || data.detalji_voznje?.lokacija_odredista || ""}</p>
+                                </div>
+                                <button onclick="zavrsiVoznju(${idVoznje})" class="bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded text-xs transition shadow-lg">Završi vožnju</button>
+                            `;
+                        }
+
+                        // 3. UZIMAMO KOORDINATE KLIJENTA SA SERVERA
+                        // (Ako server vraća specifične koordinate klijenta, npr. klijent_lat / lon, njih koristimo. 
+                        //  U suprotnom, ako imamo samo tekst polazišta, centriramo mapu na vozačevu GPS lokaciju blizu klijenta, 
+                        //  ali stavljamo jasan marker za klijentovo polazište).
+                        const klijentLat = data.detalji_voznje?.klijent_lat || vozacLat; 
+                        const klijentLon = data.detalji_voznje?.klijent_lon || vozacLon;
+                        const nazivPolazista = data.detalji_voznje?.polaziste || data.detalji_voznje?.lokacija_polazista || "Lokacija klijenta";
+
+                        // Pokrećemo mapu sa fokusom na KLIJENTA, uz opciju da prikažemo i vozača
+                        inicijalizujMapuKlijenta(klijentLat, klijentLon, vozacLat, vozacLon, nazivPolazista);
+
+                    } else {
+                        alert("Greška: " + (data.detail || "Vožnja nije dostupna."));
+                    }
+                } catch (err) {
+                    console.error("Greška:", err);
+                    alert("Došlo je do greške u komunikaciji sa serverom.");
+                }
+
+            }, function(error) {
+                alert("Molimo omogućite pristup GPS lokaciji u pretraživaču da biste mogli prihvatiti vožnju.");
+            });
+        }
+
+        function inicijalizujMapuKlijenta(klijentLat, klijentLon, vozacLat, vozacLon, nazivPolazista) {
+            const sekcijaMape = document.getElementById('sekcija-za-mapu');
+            if (sekcijaMape) {
+                sekcijaMape.style.display = 'block'; // Prikaži mapu
+            }
+
+            if (typeof L === 'undefined') {
+                console.error("Leaflet biblioteka nije učitana!");
+                return;
+            }
+
+            setTimeout(() => {
+                try {
+                    if (!mapa) {
+                        // Centriramo mapu na klijenta
+                        mapa = L.map('map').setView([klijentLat, klijentLon], 15);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            maxZoom: 19,
+                            attribution: '&copy; OpenStreetMap'
+                        }).addTo(mapa);
+
+                        // Marker za KLIJENTA (plavi / standardni)
+                        L.marker([klijentLat, klijentLon]).addTo(mapa)
+                            .bindPopup('<b>Putnik čeka ovdje:</b><br>' + nazivPolazista)
+                            .openPopup();
+
+                        // Opcioni marker za VOZAČA (da vidiš sebe u odnosu na klijenta)
+                        if (vozacLat && vozacLon) {
+                            L.marker([vozacLat, vozacLon], {
+                                opacity: 0.7
+                            }).addTo(mapa)
+                              .bindPopup('<b>Vaša trenutna GPS lokacija</b>');
+                        }
+
+                    } else {
+                        mapa.invalidateSize();
+                        mapa.setView([klijentLat, klijentLon], 15);
+                        
+                        // Osvježavamo pozicije markera
+                        mapa.eachLayer((layer) => {
+                            if (layer instanceof L.Marker) {
+                                mapa.removeLayer(layer);
+                            }
+                        });
+
+                        L.marker([klijentLat, klijentLon]).addTo(mapa)
+                            .bindPopup('<b>Putnik čeka ovdje:</b><br>' + nazivPolazista)
+                            .openPopup();
+
+                        if (vozacLat && vozacLon) {
+                            L.marker([vozacLat, vozacLon], { opacity: 0.7 }).addTo(mapa)
+                              .bindPopup('<b>Vaša trenutna GPS lokacija</b>');
+                        }
+                    }
+                } catch (e) {
+                    console.error("Greška pri inicijalizaciji mape klijenta:", e);
+                }
+            }, 150);
+        }
+        // Funkcija za završetak vožnje
+        async function zavrsiVoznju(idVoznje) {
+            try {
+                const response = await fetch(`${API_URL}/api/vozac/zavrsi-voznju/${idVoznje}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telefon: vozacTelefon })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert("Vožnja je uspješno završena!");
+
+                    // Vraćamo status zauzeća nazad na "Slobodan"
+                    const statusZauzecaSelect = document.getElementById('status-zauzeca');
+                    if (statusZauzecaSelect) {
+                        statusZauzecaSelect.value = "Slobodan";
+                    }
+
+                    // Sakrivamo mapu ponovo
+                    const sekcijaMape = document.getElementById('sekcija-za-mapu');
+                    if (sekcijaMape) {
+                        sekcijaMape.style.display = 'none';
+                    }
+
+                    // Osvježavamo listu
+                    ucitajDostupneVoznje();
+                } else {
+                    alert("Greška pri završetku vožnje: " + (data.detail || "Nepoznata greška"));
+                }
+            } catch (err) {
+                console.error("Greška:", err);
+                alert("Došlo je do greške u komunikaciji sa serverom.");
+            }
+        }
+
+        // Funkcija za ažuriranje statusa i lokacije
+        // Pomoćna funkcija koja provjerava da li je lokacija stvarno unesena (i da nije placeholder)
+        function provjeriLokacijuTekst() {
+            const input = document.getElementById('trenutna-lokacija');
+            const vrijednost = input.value.trim();
+            
+            // Ako je prazno ili ako je ostao onaj primjer iz placeholdera
+            if (!vrijednost || vrijednost.toLowerCase().includes("npr.")) {
+                return false;
+            }
+            return true;
+        }
+
+        // Funkcija za čuvanje statusa (Sada provjerava lokaciju!)
+        async function azurirajStatus() {
+            if (!provjeriLokacijuTekst()) {
+                alert("Greška: Morate unijeti svoju trenutnu lokaciju prije čuvanja statusa!");
+                document.getElementById('trenutna-lokacija').focus();
+                return;
+            }
+
+            const statusRada = document.getElementById('status-rada').value;
+            const statusZauzeca = document.getElementById('status-zauzeca').value;
+            const trenutnaLokacija = document.getElementById('trenutna-lokacija').value.trim();
+
+            try {
+                const response = await fetch(`${API_URL}/api/vozac/status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telefon: vozacTelefon,
+                        status_rada: statusRada,
+                        status_zauzeca: statusZauzeca,
+                        trenutna_lokacija: trenutnaLokacija
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.poruka || "Status i lokacija su uspješno sačuvani!");
+                } else {
+                    alert(data.detail || "Greška pri ažuriranju.");
+                }
+            } catch (error) {
+                console.error("Greška:", error);
+                alert("Došlo je do greške u komunikaciji sa serverom.");
+            }
+        }
+
+        // Pomoćna funkcija koja provjerava lokaciju prije prihvatanja vožnje
+        function provjeriIPrihvatiVoznju(idVoznje) {
+            if (!provjeriLokacijuTekst()) {
+                alert("Greška: Morate unijeti svoju trenutnu lokaciju prije prihvatanja vožnje!");
+                document.getElementById('trenutna-lokacija').focus();
+                return;
+            }
+
+            prihvatiVoznju(idVoznje);
+        }
+        // Funkcija za završetak vožnje
+        async function zavrsiVoznju(idVoznje) {
+            try {
+                const response = await fetch(`${API_URL}/api/vozac/zavrsi-voznju/${idVoznje}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telefon: vozacTelefon })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    // 1. Nalazimo karticu i pretvaramo dugme u crveno sa natpisom "Završeno"
+                    const voznjaBox = document.getElementById(`voznja-${idVoznje}`);
+                    if (voznjaBox) {
+                        const btn = voznjaBox.querySelector('button');
+                        if (btn) {
+                            btn.className = "bg-red-600 text-white font-bold px-4 py-2 rounded text-xs transition shadow-lg";
+                            btn.innerText = "Završeno";
+                            btn.disabled = true;
+                        }
+                    }
+
+                    alert("Vožnja je uspješno završena!");
+
+                    // 2. Vraćamo status zauzeća nazad na "Slobodan"
+                    const statusZauzecaSelect = document.getElementById('status-zauzeca');
+                    if (statusZauzecaSelect) {
+                        statusZauzecaSelect.value = "Slobodan";
+                    }
+
+                    // 3. Sakrivamo mapu ponovo
+                    const sekcijaMape = document.getElementById('sekcija-za-mapu');
+                    if (sekcijaMape) {
+                        sekcijaMape.style.display = 'none';
+                    }
+
+                    // 4. Kratka pauza od 1 sekundu da vozač vidi crveno dugme, pa osvježavamo listu
+                    setTimeout(() => {
+                        ucitajDostupneVoznje();
+                    }, 1000);
+
+                } else {
+                    alert("Greška pri završetku vožnje: " + (data.detail || "Nepoznata greška"));
+                }
+            } catch (err) {
+                console.error("Greška:", err);
+                alert("Došlo je do greške u komunikaciji sa serverom.");
+            }
+        }
+    </script>
+    
+    <!-- Leaflet JS biblioteka -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html>

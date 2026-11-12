@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SBK Taxi - Status Vožnje</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS za mapu -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        /* Crno-zlatna paleta i stilovi */
+        body {
+            background-color: #09090b;
+            color: #f4f4f5;
+        }
+        .bg-card {
+            background-color: #18181b;
+            border: 1px solid #d4af37; /* Zlatni rub */
+        }
+        .text-gold {
+            color: #d4af37;
+        }
+        .btn-gold {
+            background-color: #d4af37;
+            color: #09090b;
+            font-weight: bold;
+        }
+        .btn-gold:hover {
+            background-color: #c29b2e;
+        }
+        #mapa-vozaca {
+            height: 250px;
+            width: 100%;
+            border-radius: 0.5rem;
+            border: 1px solid #d4af37;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div id="glavni-kontejner" class="max-w-xl w-full bg-card p-8 rounded-2xl shadow-2xl space-y-6 text-center">
+        <!-- Zaglavlje -->
+        <div>
+            <h1 id="naslov-statusa" class="text-3xl font-bold text-gold tracking-wide">Tražimo slobodnog vozača...</h1>
+            <p id="podtekst" class="text-gray-400 mt-2">Molimo sačekajte dok naš sistem pronađe najbliže vozilo za vas.</p>
+        </div>
+
+        <!-- Detalji o vozaču (sakriveni dok ne prihvati) -->
+        <div id="vozac-info" class="hidden space-y-4 text-left bg-black p-4 rounded-xl border border-yellow-600/50">
+            <p class="text-xs text-gray-400 uppercase tracking-wider">Vaš vozač</p>
+            <p id="v-ime" class="text-lg font-semibold text-gold"></p>
+            
+            <p class="text-xs text-gray-400 uppercase tracking-wider">Trenutna lokacija / Polazište</p>
+            <p id="v-lokacija" class="text-sm font-medium text-gray-200"></p>
+
+            <p class="text-xs text-gray-400 uppercase tracking-wider">Kontakt telefon vozača</p>
+            <p id="v-tel" class="text-sm font-medium text-gray-200"></p>
+        </div>
+
+        <!-- MAPA ISPOD (Inicijalno skrivena sa style="display: none;") -->
+        <div id="sekcija-mape" class="mt-4 text-left" style="display: none;">
+            <p class="text-xs text-zinc-400 mb-2">Pregled lokacije vozača na mapi:</p>
+            <div id="mapa-vozaca"></div>
+        </div>
+
+        <div class="pt-4 border-t border-gray-800">
+            <p class="text-sm text-gold font-medium">Hvala vam na povjerenju što koristite našu SBK Taxi platformu!</p>
+        </div>
+    </div>
+
+    <!-- Leaflet JS skripta -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+ <script>
+        const API_URL = "http://127.0.0.1:8000";
+        const urlParams = new URLSearchParams(window.location.search);
+        const voznjaId = urlParams.get('id');
+
+        let mapa = null;
+        let markerVozaca = null;
+
+        // Funkcija za kreiranje i ažuriranje mape
+        function prikaziMapuVozaca(lat, lon, nazivLokacije) {
+            const sekcijaMape = document.getElementById('sekcija-mape');
+            if (sekcijaMape) {
+                sekcijaMape.style.display = 'block';
+            }
+
+            if (typeof L === 'undefined') {
+                console.error("Leaflet biblioteka nije učitana!");
+                return;
+            }
+
+            // Podrazumijevani centar Travnika
+            let latZaPrikaz = 44.2272;
+            let lonZaPrikaz = 17.6672;
+
+            // Provjera teksta lokacije (ako piše Kalibunar, centriramo tačno tamo)
+            const tekst = (nazivLokacije || document.body.innerText || "").toLowerCase();
+
+            if (tekst.includes("kalibunar")) {
+                latZaPrikaz = 44.2345; 
+                lonZaPrikaz = 17.6520;
+            } else if (tekst.includes("konzum") || tekst.includes("centar")) {
+                latZaPrikaz = 44.2280; 
+                lonZaPrikaz = 17.6650;
+            } else if (lat && lon && lat > 44.0 && lat < 44.5) {
+                // Ako su stigle validne koordinate iz regije Travnika
+                latZaPrikaz = lat;
+                lonZaPrikaz = lon;
+            }
+
+            setTimeout(() => {
+                try {
+                    if (!mapa) {
+                        mapa = L.map('mapa-vozaca').setView([latZaPrikaz, lonZaPrikaz], 16);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            maxZoom: 19,
+                            attribution: '© OpenStreetMap'
+                        }).addTo(mapa);
+                        markerVozaca = L.marker([latZaPrikaz, lonZaPrikaz]).addTo(mapa).bindPopup("Lokacija vozača").openPopup();
+                    } else {
+                        mapa.invalidateSize();
+                        mapa.setView([latZaPrikaz, lonZaPrikaz], 16);
+                        markerVozaca.setLatLng([latZaPrikaz, lonZaPrikaz]);
+                    }
+                } catch (e) {
+                    console.error("Greška pri inicijalizaciji klijentove mape:", e);
+                }
+            }, 150);
+        }
+        // Funkcija za automatsko provjeravanje statusa (polling)
+        async function provjeriStatus() {
+            if (!voznjaId) return;
+            try {
+                const res = await fetch(`${API_URL}/api/klijent/status-voznje/${voznjaId}`);
+                const data = await res.json();
+
+                if (res.ok) {
+                    const naslov = document.getElementById('naslov-statusa');
+                    const podtekst = document.getElementById('podtekst');
+                    const vozacInfo = document.getElementById('vozac-info');
+
+                    if (data.status === "Aktivna") {
+                        naslov.innerText = "Tražimo slobodnog vozača...";
+                        podtekst.innerText = "Vaša narudžba je poslana. Čekamo da vozač prihvati vožnju.";
+                        
+                        // Osiguravamo da je mapa sakrivena dok se traži vozač
+                        const sekcijaMape = document.getElementById('sekcija-mape');
+                        if (sekcijaMape) sekcijaMape.style.display = 'none';
+
+                    } else if (data.status === "U toku" && data.vozac_dodijeljen) {
+                        naslov.innerText = "Vozač je na putu!";
+                        podtekst.innerText = "Vaš vozač je prihvatio vožnju i kreće se prema vama.";
+                        
+                        vozacInfo.classList.remove('hidden');
+                        document.getElementById('v-ime').innerText = data.vozac_ime;
+                        document.getElementById('v-lokacija').innerText = data.vozac_lokacija;
+                        document.getElementById('v-tel').innerText = data.vozac_telefon;
+
+                        // TE SADA POKAZUJEMO MAPU jer je vozač prihvatio vožnju!
+                        // Koristimo koordinate vozača koje dolaze sa servera (ili fallback na Travnik centar)
+                        const latVozaca = data.lat || 44.2287;
+                        const lonVozaca = data.lon || 17.6633;
+                        prikaziMapuVozaca(latVozaca, lonVozaca);
+
+                    } else if (data.status === "Zavrsena") {
+                        // Poruka zahvalnosti i povratak na početnu
+                        document.getElementById('glavni-kontejner').innerHTML = `
+                            <div class="space-y-6 py-8">
+                                <h1 class="text-3xl font-bold text-green-400">Hvala vam na vožnji!</h1>
+                                <p class="text-gray-300">Nadamo se da ste uživali u usluzi SBK Taxi platforme.</p>
+                                <a href="index.html" class="inline-block px-6 py-3 btn-gold rounded-xl shadow-lg transition">Naručite novu vožnju</a>
+                            </div>
+                        `;
+                        clearInterval(pollingInterval);
+                    }
+                }
+            } catch (err) {
+                console.error("Greška pri provjeri statusa:", err);
+            }
+        }
+
+        const pollingInterval = setInterval(provjeriStatus, 3000);
+        provjeriStatus();
+    </script>
+</body>
+</html>

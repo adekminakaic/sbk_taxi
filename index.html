@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SBK Taxi VIP Platforma</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    body { background-color: #09090b; color: #f4f4f5; }
+    .bg-card { background-color: #18181b; border: 1px solid rgba(212, 175, 55, 0.3); }
+    .text-gold { color: #d4af37; }
+    .gold-gradient-btn {
+        background: linear-gradient(135deg, #bf953f, #fc6, #aa771c);
+        color: #000; font-weight: 700; transition: all 0.3s ease;
+    }
+    .gold-gradient-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+</style>
+</head>
+<body class="font-sans min-h-screen flex flex-col justify-between selection:bg-amber-500 selection:text-black">
+    <main class="container mx-auto px-4 py-12 max-w-xl">
+
+        <!-- 1. POČETNI EKRAN -->
+        <div id="role-selection" class="bg-card rounded-2xl shadow-2xl p-8 text-center space-y-6">
+            <h1 class="text-4xl font-extrabold text-gold tracking-wide mb-2">SBK TAXI VIP</h1>
+            <p class="text-zinc-400 mb-8 text-sm uppercase tracking-widest">Ekskluzivna prevozna platforma</p>
+            <div class="space-y-4">
+                <button type="button" onclick="prikaziPortal('driver')" class="w-full gold-gradient-btn py-3 rounded-xl shadow-lg">Portal za vozače</button>
+                <button type="button" onclick="prikaziPortal('client')" class="w-full bg-zinc-800 hover:bg-zinc-700 text-amber-400 font-bold py-3 rounded-xl border border-amber-500/30 transition">Naruči vožnju (Klijent)</button>
+            </div>
+        </div>
+
+        <!-- 2. VOZAČ PORTAL -->
+        <div id="driver-portal" class="hidden bg-card rounded-2xl shadow-2xl p-6 mt-6 space-y-6">
+            <div class="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+                <h2 class="text-2xl font-bold text-gold">Vozač - VIP Portal</h2>
+                <button type="button" onclick="nazadNaIzbor()" class="text-zinc-400 hover:text-amber-400 text-sm font-medium">← Nazad</button>
+            </div>
+
+            <!-- Registracija sa poljem za email -->
+            <div class="bg-zinc-950 p-5 rounded-xl border border-zinc-800">
+                <h3 class="text-sm font-semibold text-amber-400 mb-3">Registracija vozača</h3>
+                <form id="driver-docs-form" onsubmit="registrujVozacaSaDokumentima(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Ime i prezime:</label>
+                        <input type="text" id="doc-driver-name" required class="w-full bg-zinc-900 border border-zinc-700 p-2 rounded text-sm text-zinc-200 outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Broj telefona (06x...):</label>
+                        <input type="text" id="doc-driver-phone" placeholder="061123456" required class="w-full bg-zinc-900 border border-zinc-700 p-2 rounded text-sm text-zinc-200 outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Email adresa:</label>
+                        <input type="email" id="doc-driver-email" placeholder="primjer@domain.com" required class="w-full bg-zinc-900 border border-zinc-700 p-2 rounded text-sm text-zinc-200 outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Slika vozačke dozvole:</label>
+                        <input type="file" id="file-vozacka" accept="image/*" required class="w-full text-xs text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-amber-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Slika saobraćajne dozvole:</label>
+                        <input type="file" id="file-reg" accept="image/*" required class="w-full text-xs text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-amber-400">
+                    </div>
+                    <button type="submit" class="w-full gold-gradient-btn py-3 rounded-lg mt-2 text-sm">Pošalji dokumente i registruj se</button>
+                </form>
+
+                <div id="contract-download-box" class="hidden mt-4 p-4 bg-zinc-900 border border-amber-500/30 rounded-lg text-center">
+                    <p class="text-xs text-zinc-300 mb-2">Uspješno ste se registrovali!</p>
+                    <a id="download-link" href="#" target="_blank" class="inline-block bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold px-4 py-2 rounded transition shadow">Preuzmi ugovor</a>
+                </div>
+            </div>
+
+            <!-- Prijava postojećeg vozača -->
+            <div class="bg-zinc-950 p-5 rounded-xl border border-zinc-800">
+                <h3 class="text-sm font-semibold text-amber-400 mb-2">Već imate nalog? Prijavite se</h3>
+                <form id="driver-login-form" onsubmit="prijaviVozaca(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Vaš broj telefona:</label>
+                        <input type="text" id="login-phone" required class="w-full bg-zinc-900 border border-zinc-700 p-2 rounded text-sm text-zinc-200 outline-none focus:border-amber-500">
+                    </div>
+                    <button type="submit" class="w-full bg-zinc-800 hover:bg-zinc-700 text-amber-400 font-bold py-2 rounded text-sm transition border border-amber-500/30">Prijavi se</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 3. KLIJENT PORTAL -->
+        <div id="client-portal" class="hidden bg-card rounded-2xl shadow-2xl p-6 mt-6 space-y-6">
+            <div class="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+                <h2 class="text-2xl font-bold text-gold">Klijent - VIP Portal</h2>
+                <button type="button" onclick="nazadNaIzbor()" class="text-zinc-400 hover:text-amber-400 text-sm font-medium">← Nazad</button>
+            </div>
+
+            <div class="bg-zinc-950 p-5 rounded-xl border border-zinc-800">
+                <h3 class="text-sm font-semibold text-amber-400 mb-3">Naručite VIP vožnju</h3>
+                <form id="ride-form" onsubmit="potvrdiNarudžbu(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Vaše ime:</label>
+                        <input type="text" id="client-name" placeholder="npr. Amina" required class="w-full bg-zinc-900 border border-zinc-700 p-2 rounded text-sm text-zinc-200 outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Broj telefona:</label>
+                        <input type="text" id="client-phone" placeholder="061..." required class="w-full bg-zinc-900 border border-zinc-700 p-2 rounded text-sm text-zinc-200 outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Polazište:</label>
+                        <input type="text" id="pickup" placeholder="npr. Centar, Travnik" required class="w-full bg-zinc-900 border border-zinc-700 p-2 rounded text-sm text-zinc-200 outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs uppercase text-zinc-400 mb-1">Odredište:</label>
+                        <input type="text" id="dropoff" placeholder="npr. Vitez, FIS" required class="w-full bg-zinc-900 border border-zinc-700 p-2 rounded text-sm text-zinc-200 outline-none focus:border-amber-500">
+                    </div>
+                    <button type="button" onclick="izracunajCijenuMape()" class="w-full gold-gradient-btn py-2.5 rounded-lg text-sm mt-1">Izračunaj rutu i cijenu</button>
+
+                    <div id="result-box" class="hidden mt-4 p-3 bg-zinc-900 border border-amber-500/30 rounded text-center">
+                        <p id="calc-result" class="text-xs text-zinc-200 mb-2"></p>
+                        <button type="submit" id="confirm-ride-btn" class="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-2 rounded text-xs transition">Potvrdi i naruči vožnju</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="mt-6">
+                <label class="block text-xs uppercase text-zinc-400 mb-1">Pregled rute na mapi:</label>
+                <div id="map" class="w-full h-64 rounded-xl border border-zinc-700"></div>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        let map = null;
+        let izracunataCijenaGlobalna = 5.0;
+
+        function prikaziPortal(uloga) {
+            document.getElementById('role-selection').classList.add('hidden');
+            if (uloga === 'driver') {
+                document.getElementById('driver-portal').classList.remove('hidden');
+            } else {
+                document.getElementById('client-portal').classList.remove('hidden');
+                setTimeout(() => {
+                    if (!map) {
+                        map = L.map('map').setView([44.2255, 17.6687], 13);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            maxZoom: 19,
+                            attribution: '&copy; OpenStreetMap contributors'
+                        }).addTo(map);
+                    } else {
+                        map.invalidateSize();
+                    }
+                }, 300);
+            }
+        }
+
+        function nazadNaIzbor() {
+            document.getElementById('driver-portal').classList.add('hidden');
+            document.getElementById('client-portal').classList.add('hidden');
+            document.getElementById('role-selection').classList.remove('hidden');
+        }
+
+        async function registrujVozacaSaDokumentima(event) {
+            event.preventDefault();
+            const formData = new FormData();
+            formData.append("puno_ime", document.getElementById('doc-driver-name').value);
+            formData.append("telefon", document.getElementById('doc-driver-phone').value);
+            formData.append("email", document.getElementById('doc-driver-email').value);
+            formData.append("vozacka", document.getElementById('file-vozacka').files[0]);
+            formData.append("registracija", document.getElementById('file-reg').files[0]);
+
+            try {
+                const response = await fetch(`${API_URL}/api/vozac/registracija-sa-dokumentima`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.poruka);
+                    document.getElementById('driver-docs-form').reset();
+                } else {
+                    alert(data.detail || "Greška pri registraciji.");
+                }
+            } catch (err) {
+                console.error("Greška:", err);
+                alert("Greška u komunikaciji sa serverom.");
+            }
+        }
+
+        async function prijaviVozaca(event) {
+            event.preventDefault();
+            const telefon = document.getElementById('login-phone').value.trim();
+            if (!telefon) {
+                alert("Molimo unesite broj telefona.");
+                return;
+            }
+
+            const formData = new URLSearchParams();
+            formData.append("telefon", telefon);
+
+            try {
+                const response = await fetch(`${API_URL}/api/vozac/prijava`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.location.href = `vozac_portal.html?telefon=${telefon}`;
+                } else {
+                    alert(data.detail || "Nalog nije odobren ili ne postoji.");
+                }
+            } catch (err) {
+                console.error("Greška:", err);
+                alert("Greška u komunikaciji sa serverom.");
+            }
+        }
+
+        async function izracunajCijenuMape() {
+            const polazisteText = document.getElementById('pickup').value;
+            const odredisteText = document.getElementById('dropoff').value;
+
+            if (!polazisteText || !odredisteText) {
+                alert("Molimo unesite polazište i odredište.");
+                return;
+            }
+
+            try {
+                const startCoord = await getCoordinate(polazisteText + ", Travnik, Bosnia and Herzegovina");
+                const endCoord = await getCoordinate(odredisteText + ", Travnik, Bosnia and Herzegovina");
+
+                if (!startCoord || !endCoord) {
+                    alert("Lokacije nisu pronađene na mapi.");
+                    return;
+                }
+
+                map.setView([startCoord.lat, startCoord.lon], 13);
+                L.marker([startCoord.lat, startCoord.lon]).addTo(map).bindPopup("Polazište: " + polazisteText).openPopup();
+                L.marker([endCoord.lat, endCoord.lon]).addTo(map).bindPopup("Odredište: " + odredisteText);
+
+                const udaljenost = izracunajUdaljenost(startCoord.lat, startCoord.lon, endCoord.lat, endCoord.lon);
+                let cijena = 2.0 + (udaljenost * 1.2);
+                if (cijena < 3.0) cijena = 3.0;
+                izracunataCijenaGlobalna = Math.round(cijena * 100) / 100;
+
+                const resultBox = document.getElementById('result-box');
+                const calcResult = document.getElementById('calc-result');
+                const confirmBtn = document.getElementById('confirm-ride-btn');
+
+                resultBox.classList.remove('hidden');
+                calcResult.innerHTML = `Udaljenost: <b>${udaljenost.toFixed(1)} km</b> | Izračunata cijena: <b class="text-gold">${izracunataCijenaGlobalna} KM</b>`;
+                confirmBtn.classList.remove('hidden');
+            } catch (err) {
+                console.error(err);
+                alert("Greška pri učitavanju mape.");
+            }
+        }
+
+        async function getCoordinate(adresa) {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(adresa)}`);
+            const data = await res.json();
+            if (data && data.length > 0) {
+                return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+            }
+            return null;
+        }
+
+        function izracunajUdaljenost(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        async function potvrdiNarudžbu(event) {
+            event.preventDefault();
+            const ime = document.getElementById('client-name').value;
+            const telefon = document.getElementById('client-phone').value;
+            const polaziste = document.getElementById('pickup').value;
+            const odrediste = document.getElementById('dropoff').value;
+
+            try {
+                const response = await fetch(`${API_URL}/api/klijent/naruci-voznju`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ime_putnika: ime,
+                        telefon_putnika: telefon,
+                        lokacija_polazista: polaziste,
+                        lokacija_odredista: odrediste,
+                        cijena_voznje: izracunataCijenaGlobalna
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    window.location.href = `klijent_status.html?id=${data.voznja_id}`;
+                } else {
+                    alert(data.detail || "Neispravni podaci.");
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Greška u komunikaciji sa serverom.");
+            }
+        }
+    </script>
+</body>
+</html>
+,0

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SBK Taxi - Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #09090b; color: #f4f4f5; }
+        .gold-border { border: 1px solid rgba(212, 175, 55, 0.3); }
+        .gold-text { color: #d4af37; }
+    </style>
+</head>
+<body class="font-sans min-h-screen p-6">
+    <div class="max-w-4xl mx-auto space-y-6">
+
+        <!-- Zaglavlje -->
+        <div class="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+            <h1 class="text-3xl font-bold gold-text">Admin - Dispečer Centar</h1>
+            <a href="index.html" class="text-zinc-400 hover:text-amber-400 text-sm font-medium">Nazad na glavnu</a>
+        </div>
+
+        <!-- Prijava -->
+        <div id="login-sekcija" class="bg-zinc-900 border border-zinc-800 p-6 rounded-xl shadow-lg">
+            <h3 class="text-lg font-bold text-amber-400 mb-2">Administrativna prijava</h3>
+            <p class="text-xs text-zinc-400 mb-4">Unesite tajnu šifru za pristup upravljanju sistemom.</p>
+            <div class="flex gap-2">
+                <input type="password" id="admin-sifra-input" placeholder="Unesi admin šifru..." class="bg-zinc-950 border border-zinc-700 p-2 rounded-lg text-sm w-full">
+                <button onclick="provjeriSifru()" class="bg-amber-500 hover:bg-amber-400 text-black font-bold px-4 py-2 rounded-lg text-sm">Prijava</button>
+            </div>
+            <p id="login-greska" class="text-red-400 text-xs mt-2 hidden">Pogrešna šifra! Pokušajte ponovo.</p>
+        </div>
+
+        <!-- Kontrolna dugmad -->
+        <div id="admin-sadrzaj" class="hidden space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button onclick="adminUcitajVozace()" class="w-full bg-zinc-900 hover:bg-zinc-800 text-amber-400 font-bold py-3 rounded-lg border border-amber-500/20">Svi registrovani vozači</button>
+                <button onclick="adminUcitajVozaceNaCekanju()" class="w-full bg-amber-500 hover:bg-amber-400 text-black font-bold py-3 rounded-lg">Vozači koji čekaju verifikaciju</button>
+                <button onclick="adminUcitajVoznje()" class="w-full bg-zinc-900 hover:bg-zinc-800 text-zinc-200 font-bold py-3 rounded-lg border border-zinc-700">Sve naručene vožnje</button>
+            </div>
+
+            <!-- Prostor za prikaz iz baze -->
+            <div id="admin-output-box" class="bg-zinc-950 border border-zinc-800 p-5 rounded-xl text-sm min-h-[150px]">
+                <p class="text-zinc-500 text-center">Izaberite opciju iznad za pregled podataka iz baze.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Skripte za admin akcije -->
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        let unijetaSifra = "";
+
+        function provjeriSifru() {
+            const inputVal = document.getElementById('admin-sifra-input').value.trim();
+            const greskaText = document.getElementById('login-greska');
+
+            if (inputVal === "sbktaxiadmin2026") {
+                unijetaSifra = inputVal;
+                document.getElementById('login-sekcija').classList.add('hidden');
+                document.getElementById('admin-sadrzaj').classList.remove('hidden');
+                greskaText.classList.add('hidden');
+                adminUcitajVozaceNaCekanju();
+            } else {
+                greskaText.classList.remove('hidden');
+            }
+        }
+
+        async function adminUcitajVozace() {
+            try {
+                const res = await fetch(`${API_URL}/api/admin/svi-vozaci?sifra=${unijetaSifra}`);
+                const data = await res.json();
+                const box = document.getElementById('admin-output-box');
+
+                if (data.vozaci && data.vozaci.length > 0) {
+                    box.innerHTML = `<h4 class="font-bold text-amber-400 mb-3">Svi registrovani vozači:</h4>`;
+                    data.vozaci.forEach(v => {
+                        box.innerHTML += `
+                            <div class="p-3 border-b border-zinc-800 flex justify-between items-center">
+                                <div>
+                                    <b>${v.puno_ime}</b> (${v.telefon}) - Mail: ${v.email || 'Nije unesen'}<br>
+                                    <span class="text-xs text-zinc-400">Prijava: ${v.zadnja_prijava || 'Nema recorda'} | Odjava: ${v.zadnja_odjava || 'Nema recorda'}</span>
+                                </div>
+                                <span class="text-xs px-2 py-1 rounded ${v.verifikovan ? 'bg-emerald-900 text-emerald-300' : 'bg-amber-900 text-amber-300'}">
+                                    ${v.verifikovan ? 'Odobren' : 'Na čekanju'}
+                                </span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    box.innerHTML = `<p class="text-zinc-500">Nema registrovanih vozača.</p>`;
+                }
+            } catch (err) {
+                alert("Greška pri komunikaciji sa serverom.");
+            }
+        }
+
+        async function adminUcitajVozaceNaCekanju() {
+            try {
+                const res = await fetch(`${API_URL}/api/admin/vozaci/za-odobrenje?sifra=${unijetaSifra}`);
+                const data = await res.json();
+                const box = document.getElementById('admin-output-box');
+
+                box.innerHTML = `<h4 class="font-bold text-amber-400 mb-3">Vozači koji čekaju verifikaciju:</h4>`;
+                const lista = data.vozaci || [];
+
+                if (lista.length > 0) {
+                    lista.forEach(v => {
+                        box.innerHTML += `
+                            <div class="p-3 bg-zinc-900 border border-zinc-800 rounded-lg mb-3" id="vozac-${v.id}">
+                                <div class="flex justify-between items-center mb-2">
+                                    <div>
+                                        <b>${v.puno_ime}</b><br>
+                                        <span class="text-xs text-zinc-400">Tel: ${v.telefon} | Email: ${v.email}</span>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="adminOdobri(${v.id})" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-1.5 rounded">Odobri</button>
+                                        <button onclick="odbijVozaca(${v.id})" class="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-3 py-1.5 rounded">Odbij</button>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-zinc-400 flex gap-3 pt-2 border-t border-zinc-800">
+                                    ${v.slika_vozacke ? `<a href="${API_URL}${v.slika_vozacke}" target="_blank" class="text-amber-400 underline">Pogledaj vozačku</a>` : ''}
+                                    ${v.slika_registracije ? `<a href="${API_URL}${v.slika_registracije}" target="_blank" class="text-amber-400 underline">Pogledaj saobraćajnu</a>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    box.innerHTML += `<p class="text-zinc-500">Nema vozača na čekanju.</p>`;
+                }
+            } catch (err) {
+                alert("Greška pri učitavanju vozača na čekanju.");
+            }
+        }
+
+        async function adminOdobri(id) {
+            try {
+                const res = await fetch(`${API_URL}/api/admin/odobri-vozaca/${id}?sifra=${unijetaSifra}`, { method: 'PATCH' });
+                const data = await res.json();
+                if (res.ok) {
+                    alert(data.poruka);
+                    adminUcitajVozaceNaCekanju();
+                } else {
+                    alert("Greška pri odobravanju: " + (data.detail || "Nepoznata greška"));
+                }
+            } catch (err) {
+                alert("Greška u mreži.");
+            }
+        }
+
+        async function odbijVozaca(vozacId) {
+            let razlog = prompt("Unesite razlog odbijanja (npr. Slika vozačke dozvole je mutna):", "Dokumenti nisu ispravni.");
+            if (razlog === null) return;
+
+            try {
+                const response = await fetch(`${API_URL}/api/admin/odbij-vozaca/${vozacId}?sifra=${unijetaSifra}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ razlog: razlog })
+                });
+
+                const rezultat = await response.json();
+                if (response.ok) {
+                    alert(rezultat.poruka);
+                    adminUcitajVozaceNaCekanju();
+                } else {
+                    alert("Greška: " + rezultat.detail);
+                }
+            } catch (error) {
+                alert("Došlo je do greške prilikom povezivanja sa serverom.");
+            }
+        }
+
+        async function adminUcitajVoznje() {
+            try {
+                const res = await fetch(`${API_URL}/api/admin/sve-voznje?sifra=${unijetaSifra}`);
+                const data = await res.json();
+                const box = document.getElementById('admin-output-box');
+
+                const listaVoznji = data.voznje || [];
+                if (listaVoznji.length > 0) {
+                    box.innerHTML = `<h4 class="font-bold text-amber-400 mb-3">Sve naručene vožnje:</h4>`;
+                    listaVoznji.forEach(v => {
+                        box.innerHTML += `
+                            <div class="p-3 bg-zinc-900 border border-zinc-800 rounded-lg space-y-1 mb-2">
+                                <div><b>Putnik:</b> ${v.ime_putnika} (${v.telefon_putnika})</div>
+                                <div class="text-xs text-zinc-300"><b>Relacija:</b> ${v.lokacija_polazista} ➡️ ${v.lokacija_odredista}</div>
+                                <div class="text-xs text-amber-400"><b>Cijena:</b> ${v.cijena_voznje} KM | <b>Status:</b> ${v.status}</div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    box.innerHTML = `<p class="text-zinc-500">Trenutno nema naručenih vožnji.</p>`;
+                }
+            } catch (err) {
+                alert("Greška pri učitavanju vožnji.");
+            }
+        }
+    </script>
+</body>
+</html>
